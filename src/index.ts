@@ -4,7 +4,7 @@
 
 import cors from "cors";
 import express, { Request, Response } from "express";
-import streamRoutes from "./api/v1/streams";
+import v1Router from "./api/v1/router";
 
 import indexerWebhookRouter from "./routes/webhooks/indexer";
 
@@ -19,7 +19,7 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", service: "streampay-backend", timestamp: new Date().toISOString() });
 });
 
-app.use("/api/v1/streams", streamRoutes);
+app.use("/api/v1", v1Router);
 
 if (require.main === module) {
   app.listen(PORT, () => {

@@ -67,6 +67,15 @@ Security notes:
 - Replay protection is enforced by deduplicating `eventId` values in the ingestion service.
 - Duplicate deliveries are treated as safe no-ops and return `202 Accepted`.
 
+## API Versioning Policy
+
+All new features and endpoints must be mounted under the `/api/v1` prefix.
+
+**Deprecation and Sunset Policy:**
+We use HTTP headers to signal end-of-life for specific API versions:
+- `X-API-Version`: Indicates the current version of the API responding to the request.
+- `Deprecation`: A boolean flag (`true` or `false`) indicating if the API version is deprecated. When `true`, developers should migrate to a newer version as soon as possible.
+
 ## Scripts
 
 | Command        | Description              |
