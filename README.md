@@ -39,6 +39,34 @@ Node.js + Express (TypeScript) service that will power the StreamPay API gateway
 
 API will be at `http://localhost:3001` (or `PORT` env). Try `GET /health` and `GET /api/streams`.
 
+## Indexer webhook ingestion
+
+The backend now exposes `POST /webhooks/indexer` for trusted chain-indexer events such as `stream_created` and `settled`.
+
+Set `INDEXER_WEBHOOK_SECRET` before running the service. The sender must compute an HMAC SHA-256 signature over the raw JSON request body and send it in the `x-indexer-signature` header using either the raw hex digest or the `sha256=<digest>` format.
+
+Example payload:
+
+```json
+{
+  "eventId": "evt_123",
+  "eventType": "stream_created",
+  "streamId": "stream_456",
+  "occurredAt": "2026-03-23T10:00:00.000Z",
+  "chainId": "stellar-testnet",
+  "transactionHash": "abc123",
+  "data": {
+    "amount": "42"
+  }
+}
+```
+
+Security notes:
+
+- Signature verification uses the raw request body and `crypto.timingSafeEqual`.
+- Replay protection is enforced by deduplicating `eventId` values in the ingestion service.
+- Duplicate deliveries are treated as safe no-ops and return `202 Accepted`.
+
 ## Scripts
 
 | Command        | Description              |
