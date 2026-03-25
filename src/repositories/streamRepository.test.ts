@@ -15,14 +15,14 @@ describe("StreamRepository", () => {
     jest.clearAllMocks();
   });
 
-  const createMockQuery = (value: any) => {
-    const query: any = {
+  const createMockQuery = <T>(value: T) => {
+    const query = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
-      then: (onfulfilled: any) => Promise.resolve(value).then(onfulfilled),
+      then: (onfulfilled: (value: T) => unknown) => Promise.resolve(value).then(onfulfilled),
     };
     return query;
   };
