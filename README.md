@@ -67,20 +67,14 @@ Security notes:
 - Replay protection is enforced by deduplicating `eventId` values in the ingestion service.
 - Duplicate deliveries are treated as safe no-ops and return `202 Accepted`.
 
-## Prometheus Metrics
+## API Versioning Policy
 
-The backend exposes a standard Prometheus metrics endpoint at `GET /metrics`.
+All new features and endpoints must be mounted under the `/api/v1` prefix.
 
-- **HTTP Metrics**: Tracks request duration, error rates, and throughput (labels: `method`, `route`, `status_code`).
-- **Custom Metrics**: Includes `job_sync_lag_seconds` to track background processing delay.
-- **Default Metrics**: Standard Node.js process and runtime metrics (GC, memory, CPU).
-
-### Security
-
-In `production` Environments, the `/metrics` endpoint is protected by a Bearer token.
-- Set `PROMETHEUS_AUTH_TOKEN` in your environment.
-- Clients must provide `Authorization: Bearer <token>`.
-- In non-production environments, authentication is bypassed for easier debugging.
+**Deprecation and Sunset Policy:**
+We use HTTP headers to signal end-of-life for specific API versions:
+- `X-API-Version`: Indicates the current version of the API responding to the request.
+- `Deprecation`: A boolean flag (`true` or `false`) indicating if the API version is deprecated. When `true`, developers should migrate to a newer version as soon as possible.
 
 ## Scripts
 
