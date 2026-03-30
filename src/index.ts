@@ -9,6 +9,7 @@ import v1Router from "./api/v1/router";
 import indexerWebhookRouter from "./routes/webhooks/indexer";
 
 import { env } from "./config/env";
+import { createCorsOptions } from "./config/cors";
 
 const app = express();
 const PORT = env.PORT;
@@ -16,7 +17,7 @@ const PORT = env.PORT;
 app.get("/metrics", metricsHandler);
 app.use(metricsMiddleware);
 
-app.use(cors());
+app.use(cors(createCorsOptions(process.env)));
 app.use("/webhooks/indexer", express.raw({ type: "application/json" }), indexerWebhookRouter);
 app.use(express.json());
 
