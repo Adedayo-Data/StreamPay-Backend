@@ -76,6 +76,41 @@ We use HTTP headers to signal end-of-life for specific API versions:
 - `X-API-Version`: Indicates the current version of the API responding to the request.
 - `Deprecation`: A boolean flag (`true` or `false`) indicating if the API version is deprecated. When `true`, developers should migrate to a newer version as soon as possible.
 
+## Outbound Webhooks
+
+Register external URLs to receive signed HTTP POST notifications when stream lifecycle events occur.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/webhooks` | Register a new subscription |
+| `GET` | `/api/v1/webhooks` | List all subscriptions |
+| `DELETE` | `/api/v1/webhooks/:id` | Remove a subscription |
+
+**Registration example:**
+
+```json
+POST /api/v1/webhooks
+{
+  "url": "https://your-service.example.com/hook",
+  "eventTypes": ["stream_created", "settled"]
+}
+```
+
+Omit `eventTypes` to receive all events. The response includes a `secret` — store it securely, it is never returned again.
+
+**Delivery:**
+
+Each event is delivered as a `POST` with:
+- `Content-Type: application/json`
+- `X-StreamPay-Signature: sha256=<hmac>` — HMAC-SHA256 of the raw body using your subscription secret
+- `X-StreamPay-Event: <eventType>`
+
+Failed deliveries are retried up to 5 times with exponential backoff (5 s, 10 s, 20 s, 40 s, 80 s), capped at 5 minutes.
+
+**Supported event types:** `stream_created`, `stream_cancelled`, `stream_completed`, `stream_paused`, `settled`
+
 ## Scripts
 
 | Command        | Description              |
