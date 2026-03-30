@@ -7,6 +7,8 @@ import express, { Request, Response } from "express";
 import v1Router from "./api/v1/router";
 
 import indexerWebhookRouter from "./routes/webhooks/indexer";
+import { apiKeyAuthMiddleware } from "./middleware/apiKeyAuth";
+import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
 import { env } from "./config/env";
 
@@ -17,14 +19,14 @@ app.get("/metrics", metricsHandler);
 app.use(metricsMiddleware);
 
 app.use(cors());
-app.use("/webhooks/indexer", express.raw({ type: "application/json" }), indexerWebhookRouter);
+app.use("/webhooks/indexer", express.raw({ type: "application/json" }), apiKeyAuthMiddleware, indexerWebhookRouter);
 app.use(express.json());
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", service: "streampay-backend", timestamp: new Date().toISOString() });
 });
 
-app.use("/api/v1", v1Router);
+app.use("/api/v1", apiKeyAuthMiddleware, v1Router);
 
 if (require.main === module) {
   app.listen(PORT, () => {

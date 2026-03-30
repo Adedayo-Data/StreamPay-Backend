@@ -1,8 +1,18 @@
 import request from "supertest";
 import app from "../../index";
 import { StreamRepository } from "../../repositories/streamRepository";
+import { refreshApiKeyStore } from "../../middleware/apiKeyAuth";
 
 describe("Stream API Routes", () => {
+  beforeAll(() => {
+    process.env.API_KEYS = "test-1234";
+    refreshApiKeyStore();
+  });
+
+  afterAll(() => {
+    delete process.env.API_KEYS;
+  });
+
   describe("GET /api/v1/streams/:id", () => {
     const validId = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -10,7 +20,7 @@ describe("Stream API Routes", () => {
       const mockStream = { id: validId, payer: "p1", accruedEstimate: "10.5" };
       const spy = jest.spyOn(StreamRepository.prototype, "findById").mockResolvedValue(mockStream as never);
 
-      const response = await request(app).get(`/api/v1/streams/${validId}`);
+      const response = await request(app).get(`/api/v1/streams/${validId}`).set("x-api-key", "test-1234");
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockStream);
@@ -20,7 +30,7 @@ describe("Stream API Routes", () => {
     it("should return 404 when stream is not found", async () => {
       const spy = jest.spyOn(StreamRepository.prototype, "findById").mockResolvedValue(null);
 
-      const response = await request(app).get(`/api/v1/streams/${validId}`);
+      const response = await request(app).get(`/api/v1/streams/${validId}`).set("x-api-key", "test-1234");
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe("Stream not found");
@@ -28,7 +38,9 @@ describe("Stream API Routes", () => {
     });
 
     it("should return 400 when ID is invalid", async () => {
-      const response = await request(app).get("/api/v1/streams/invalid-id");
+      const response = await request(app)
+        .get("/api/v1/streams/invalid-id")
+        .set("x-api-key", "test-1234");
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe("Invalid stream ID format");
@@ -45,7 +57,7 @@ describe("Stream API Routes", () => {
       };
       const spy = jest.spyOn(StreamRepository.prototype, "findAll").mockResolvedValue(mockResult as never);
 
-      const response = await request(app).get("/api/v1/streams?payer=p1");
+      const response = await request(app).get("/api/v1/streams?payer=p1").set("x-api-key", "test-1234");
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockResult);
