@@ -15,7 +15,8 @@ router.get("/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid stream ID format" });
     }
 
-    const stream = await streamRepository.findById(id);
+    const includeDeleted = req.query.includeDeleted === "true" || req.query.includeDeleted === "1";
+    const stream = await streamRepository.findById(id, includeDeleted);
 
     if (!stream) {
       return res.status(404).json({ error: "Stream not found" });
@@ -28,10 +29,35 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/v1/streams/:id (soft delete)
+router.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({ error: "Invalid stream ID format" });
+    }
+
+    const deleted = await streamRepository.softDeleteById(id);
+
+    if (!deleted) {
+      return res.status(404).json({ error: "Stream not found" });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting stream:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/v1/streams
 router.get("/", async (req: Request, res: Response) => {
   try {
     const { payer, recipient, status, limit, offset } = req.query;
+
+    const includeDeleted = req.query.includeDeleted === "true" || req.query.includeDeleted === "1";
 
     const params: FindAllParams = {
       payer: payer as string | undefined,
@@ -39,6 +65,7 @@ router.get("/", async (req: Request, res: Response) => {
       status: status as FindAllParams["status"],
       limit: limit ? parseInt(limit as string, 10) : undefined,
       offset: offset ? parseInt(offset as string, 10) : undefined,
+      includeDeleted,
     };
 
     const result = await streamRepository.findAll(params);

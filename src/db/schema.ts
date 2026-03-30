@@ -12,6 +12,7 @@ export const streams = pgTable("streams", {
   endTime: timestamp("end_time"),
   totalAmount: decimal("total_amount", { precision: 20, scale: 9 }).notNull(),
   lastSettledAt: timestamp("last_settled_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
