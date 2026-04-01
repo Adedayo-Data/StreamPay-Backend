@@ -11,6 +11,7 @@ import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 import indexerWebhookRouter from "./routes/webhooks/indexer";
 
 import { env } from "./config/env";
+import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
 const app = express();
 const PORT = env.PORT;
