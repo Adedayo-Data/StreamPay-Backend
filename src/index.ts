@@ -9,6 +9,7 @@ import { generateOpenApi } from "./api/v1/openapi";
 import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
 import indexerWebhookRouter from "./routes/webhooks/indexer";
+import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
 import { env } from "./config/env";
 import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
