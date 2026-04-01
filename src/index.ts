@@ -11,6 +11,8 @@ import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 import indexerWebhookRouter from "./routes/webhooks/indexer";
 import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
+import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
+
 import { env } from "./config/env";
 import { metricsHandler, metricsMiddleware } from "./metrics/prometheus";
 
