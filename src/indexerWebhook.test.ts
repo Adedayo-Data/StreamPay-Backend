@@ -1,8 +1,7 @@
 import crypto from "crypto";
-
 import request from "supertest";
-
 import app from "./index";
+
 import { eventIngestionService } from "./services/eventIngestionService";
 import { refreshApiKeyStore } from "./middleware/apiKeyAuth";
 
@@ -120,7 +119,7 @@ describe("POST /webhooks/indexer", () => {
   });
 
   it("rejects malformed JSON even with a valid signature", async () => {
-    const body = "{\"eventId\":";
+    const body = '{"eventId":';
 
     const res = await request(app)
       .post("/webhooks/indexer")

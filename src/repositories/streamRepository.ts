@@ -11,6 +11,13 @@ export interface FindAllParams {
   includeDeleted?: boolean;
 }
 
+export interface UpdateStreamParams {
+  labels?: string[];
+  offChainMemo?: string;
+  status?: "active" | "paused" | "cancelled" | "completed";
+  updatedAt?: Date;
+}
+
 export class StreamRepository {
   async findById(id: string, includeDeleted = false): Promise<(Stream & { accruedEstimate: string }) | null> {
     const conditions = [eq(streams.id, id)];
@@ -54,7 +61,7 @@ export class StreamRepository {
       .offset(offset);
 
     const data = await query;
-    
+
     // For total count
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
@@ -69,17 +76,24 @@ export class StreamRepository {
     };
   }
 
-  async softDeleteById(id: string): Promise<boolean> {
-    const result = await db
-      .update(streams)
-      .set({ deletedAt: new Date() })
-      .where(eq(streams.id, id));
+  async updateById(id: string, updates: UpdateStreamParams, currentUpdatedAt?: Date): Promise<Stream | null> {
+    const updateData: Partial<Stream> = {
+      ...updates,
+      updatedAt: new Date(),
+    };
 
-    if (typeof result === "number") {
-      return result > 0;
+    const conditions = [eq(streams.id, id)];
+    if (currentUpdatedAt) {
+      conditions.push(eq(streams.updatedAt, currentUpdatedAt));
     }
 
-    return (result as { rowCount?: number }).rowCount ? (result as { rowCount: number }).rowCount > 0 : false;
+    const result = await db
+      .update(streams)
+      .set(updateData)
+      .where(and(...conditions))
+      .returning();
+
+    return result[0] || null;
   }
 
   private calculateAccruedEstimate(stream: Stream): number {
@@ -88,12 +102,12 @@ export class StreamRepository {
     const now = new Date();
     const startTime = new Date(stream.lastSettledAt);
     const endTime = stream.endTime ? new Date(stream.endTime) : null;
-    
+
     const effectiveNow = endTime && now > endTime ? endTime : now;
-    
+
     const elapsedSeconds = Math.max(0, (effectiveNow.getTime() - startTime.getTime()) / 1000);
     const rate = parseFloat(stream.ratePerSecond);
-    
+
     return elapsedSeconds * rate;
   }
 }
