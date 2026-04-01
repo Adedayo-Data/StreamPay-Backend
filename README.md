@@ -37,7 +37,25 @@ Node.js + Express (TypeScript) service that will power the StreamPay API gateway
    npm run build && npm start
    ```
 
-API will be at `http://localhost:3001` (or `PORT` env). Try `GET /health` and `GET /api/streams`.
+API will be at `http://localhost:3001` (or `PORT` env). 
+
+- **Health Check**: `GET /health`
+- **Streams API**: `GET /api/v1/streams`
+- **OpenAPI Spec**: `GET /api/openapi.json`
+
+## CORS configuration
+
+The API now uses an environment-driven CORS allowlist.
+
+- Development / test: if `CORS_ALLOWED_ORIGINS` is unset, requests are allowed for any origin.
+- Production: `CORS_ALLOWED_ORIGINS` is required and must be a comma-separated list.
+- Wildcard (`*`) is rejected in production.
+
+Example:
+
+```env
+CORS_ALLOWED_ORIGINS=https://app.streampay.com,https://admin.streampay.com
+```
 
 ## Indexer webhook ingestion
 
@@ -76,40 +94,29 @@ We use HTTP headers to signal end-of-life for specific API versions:
 - `X-API-Version`: Indicates the current version of the API responding to the request.
 - `Deprecation`: A boolean flag (`true` or `false`) indicating if the API version is deprecated. When `true`, developers should migrate to a newer version as soon as possible.
 
-## Outbound Webhooks
+## Rate Limiting
 
-Register external URLs to receive signed HTTP POST notifications when stream lifecycle events occur.
+All API routes are protected by IP-based and API-key-based rate limiting using [`express-rate-limit`](https://github.com/express-rate-limit/express-rate-limit).
 
-**Endpoints:**
+| Limiter | Window | Max requests | Applies to |
+|---------|--------|-------------|------------|
+| Global  | 60 s   | 100         | All routes |
+| Auth    | 15 min | 20          | Auth / sensitive endpoints |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/webhooks` | Register a new subscription |
-| `GET` | `/api/v1/webhooks` | List all subscriptions |
-| `DELETE` | `/api/v1/webhooks/:id` | Remove a subscription |
+When a limit is exceeded the server responds with **HTTP 429 Too Many Requests** and includes a `Retry-After` header (via the `RateLimit-Reset` standard header) so clients know when to retry.
 
-**Registration example:**
+**Key resolution priority:** `X-API-Key` header → client IP address. Requests that supply an `X-API-Key` header are bucketed per key, allowing legitimate high-volume integrations to be granted higher limits independently of other clients.
 
-```json
-POST /api/v1/webhooks
-{
-  "url": "https://your-service.example.com/hook",
-  "eventTypes": ["stream_created", "settled"]
-}
+**Configuration** (all optional — defaults shown):
+
+```
+RATE_LIMIT_WINDOW_MS=60000       # Global window in ms (default: 60 s)
+RATE_LIMIT_MAX=100               # Global max requests per window (default: 100)
+RATE_LIMIT_AUTH_WINDOW_MS=900000 # Auth window in ms (default: 15 min)
+RATE_LIMIT_AUTH_MAX=20           # Auth max requests per window (default: 20)
 ```
 
-Omit `eventTypes` to receive all events. The response includes a `secret` — store it securely, it is never returned again.
-
-**Delivery:**
-
-Each event is delivered as a `POST` with:
-- `Content-Type: application/json`
-- `X-StreamPay-Signature: sha256=<hmac>` — HMAC-SHA256 of the raw body using your subscription secret
-- `X-StreamPay-Event: <eventType>`
-
-Failed deliveries are retried up to 5 times with exponential backoff (5 s, 10 s, 20 s, 40 s, 80 s), capped at 5 minutes.
-
-**Supported event types:** `stream_created`, `stream_cancelled`, `stream_completed`, `stream_paused`, `settled`
+> Security note: If the service runs behind a reverse proxy (nginx, AWS ALB, etc.) set `app.set('trust proxy', 1)` so that `req.ip` reflects the real client IP rather than the proxy address.
 
 ## Scripts
 
@@ -158,3 +165,48 @@ To run the E2E smoke tests against a local Docker stack:
 2. `./scripts/smoke.sh http://localhost:3000`
 
 **Prerequisites:** `curl` must be installed.
+
+## Operations
+
+### Database Connection Pool
+
+The backend uses a PostgreSQL connection pool with configurable settings.
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_POOL_MAX` | 10 (dev) / 20 (prod) | Maximum number of connections in pool |
+| `DB_POOL_IDLE_TIMEOUT` | 30000 (dev) / 60000 (prod) | Idle connection timeout in ms |
+| `DB_CONNECTION_TIMEOUT` | 5000 (dev) / 10000 (prod) | Connection acquisition timeout in ms |
+| `DB_STATEMENT_TIMEOUT` | 30000 (dev) / 60000 (prod) | Query timeout in ms |
+
+#### Recommended Settings
+
+**Development:**
+- Pool size: 10 connections
+- Idle timeout: 30 seconds
+- Statement timeout: 30 seconds
+
+**Production:**
+- Pool size: 20 connections
+- Idle timeout: 60 seconds
+- Statement timeout: 60 seconds
+
+#### Monitoring
+
+Pool errors are logged to stderr. The application will exit on unexpected idle client errors to prevent undefined states.
+
+### Migrations
+
+Run database migrations using Drizzle Kit:
+
+```bash
+# Push schema to database
+npx drizzle-kit push
+
+# Generate migration files
+npx drizzle-kit generate
+```
+
+See [docs/data-model.md](docs/data-model.md) for schema documentation.

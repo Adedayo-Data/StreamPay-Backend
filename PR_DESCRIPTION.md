@@ -1,92 +1,64 @@
-# feat(backend): outbound signed webhooks for stream events
+# feat(backend): Rate Limiting for HTTP API
 
 ## Summary
 
-Implements outbound webhook delivery so external systems can subscribe to stream lifecycle events. Subscribers register a URL and receive signed HTTP POST requests whenever an event fires. Failed deliveries are retried with exponential backoff.
+Implements per-IP and per-API-key rate limiting across all HTTP routes using `express-rate-limit` v8, with a stricter limiter available for auth/sensitive endpoints. All limits are configurable via environment variables and default to sensible production values.
 
 ## What changed
 
-- `src/db/schema.ts` — two new Drizzle ORM tables: `webhook_subscriptions` (URL, hashed secret, event filter, enabled flag) and `webhook_deliveries` (per-attempt tracking with status, HTTP status, error, next retry time).
-- `src/repositories/webhookRepository.ts` — data-access layer for both tables, including `findEnabledSubscriptionsForEvent` (filters by event type) and `findDueDeliveries` (pending rows whose `next_attempt_at` has passed).
-- `src/services/webhookDeliveryService.ts` — delivery worker: HMAC-SHA256 signing, HTTP dispatch, exponential backoff retry (up to 5 attempts, base 5 s, capped at 5 min), `enqueue()` for fanning out to matching subscribers, `processDue()` for the polling loop, `startWorker()` for the background interval.
-- `src/api/v1/webhooks.ts` — REST endpoints: `POST /api/v1/webhooks`, `GET /api/v1/webhooks`, `DELETE /api/v1/webhooks/:id`. Signing secret is generated server-side and returned only at creation time; never exposed again.
-- `src/api/v1/router.ts` — mounts the new webhooks router at `/api/v1/webhooks`.
-- `src/index.ts` — starts the delivery worker when the process is the main module. Also removed the pre-existing dangling `metricsHandler` / `metricsMiddleware` references (see note below).
-- `README.md` — new **Outbound Webhooks** section documenting endpoints, payload format, signature verification, and retry policy.
+- `src/middleware/rateLimit.ts` — new middleware module exposing `createGlobalRateLimiter` and `createAuthRateLimiter` factory functions, plus singleton instances (`globalRateLimiter`, `authRateLimiter`) ready to drop onto any router.
+- `src/index.ts` — `globalRateLimiter` wired in after CORS, before route handlers.
+- `src/config/env.ts` — four new optional env vars added to the Zod schema (`RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, `RATE_LIMIT_AUTH_WINDOW_MS`, `RATE_LIMIT_AUTH_MAX`).
+- `.env.example` — documents the new vars with their defaults.
+- `README.md` — new **Rate Limiting** section documents limits, headers, key resolution, and proxy configuration note.
+- `src/middleware/rateLimit.test.ts` — 9 tests covering: under-limit pass-through, 429 on limit exceeded, `RateLimit` response headers, `Retry-After` on 429, independent counters per API key, same-key blocking, auth limiter, and test-env skip behaviour.
 
-## API
+## Rate limit defaults
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/webhooks` | Register subscription — returns secret once |
-| `GET` | `/api/v1/webhooks` | List subscriptions (secret never returned) |
-| `DELETE` | `/api/v1/webhooks/:id` | Remove subscription |
+| Limiter | Window  | Max requests | Scope       |
+|---------|---------|-------------|-------------|
+| Global  | 60 s    | 100         | All routes  |
+| Auth    | 15 min  | 20          | Auth routes |
 
-## Delivery mechanics
+Responses over the limit return **HTTP 429** with a `Retry-After` value via the `RateLimit-Reset` standard header (draft-7).
 
-- Payload signed with `HMAC-SHA256` over the raw JSON body; signature sent in `X-StreamPay-Signature: sha256=<hex>`.
-- Retry schedule on failure: 5 s → 10 s → 20 s → 40 s → 80 s (capped at 5 min), max 5 attempts, then permanently marked `failed`.
-- Subscriber URL receives `X-StreamPay-Event` header for easy routing.
-- Fetch timeout: 10 seconds per attempt.
+Key resolution priority: `X-API-Key` header → client IP (IPv6-safe via `ipKeyGenerator`).
 
 ## Test output
 
 ```
-PASS  src/services/webhookDeliveryService.test.ts
-  signPayload
-    ✓ produces a sha256= prefixed HMAC
-    ✓ is deterministic for the same inputs
-    ✓ differs when the secret changes
-    ✓ matches a manually computed HMAC
-  nextRetryDelay
-    ✓ returns BASE_DELAY_MS on first retry (attempt=1)
-    ✓ doubles on each subsequent attempt
-    ✓ is capped at MAX_DELAY_MS
-  WebhookDeliveryService.enqueue
-    ✓ creates a delivery for each matching subscription
-    ✓ returns empty array when no subscriptions match
-  WebhookDeliveryService.attempt — success
-    ✓ marks delivery as success on HTTP 200
-    ✓ sends the correct event type header
-  WebhookDeliveryService.attempt — retries
-    ✓ schedules a retry with backoff on non-2xx response
-    ✓ marks as failed after MAX_ATTEMPTS
-    ✓ marks as failed when fetch throws (network error)
-    ✓ marks as failed when subscription is deleted
-  WebhookDeliveryService.processDue
-    ✓ calls attempt for each due delivery
-    ✓ does nothing when no deliveries are due
+PASS  src/middleware/rateLimit.test.ts
+  Rate Limiting Middleware
+    createGlobalRateLimiter
+      ✓ allows requests under the limit
+      ✓ returns 429 when limit is exceeded
+      ✓ includes RateLimit headers in the response
+      ✓ includes Retry-After header on 429 response
+      ✓ keys by X-API-Key header when present
+      ✓ blocks the same API key after limit is exceeded
+    createAuthRateLimiter
+      ✓ allows requests under the stricter auth limit
+      ✓ returns 429 when auth limit is exceeded
+    skip behaviour in test environment
+      ✓ skips rate limiting when RATE_LIMIT_ENABLED is not set
 
-PASS  src/api/v1/webhooks.test.ts
-  POST /api/v1/webhooks
-    ✓ creates a subscription and returns 201 with a secret
-    ✓ creates a subscription with no eventTypes (all events)
-    ✓ returns 400 for an invalid URL
-    ✓ returns 400 when url is missing
-  GET /api/v1/webhooks
-    ✓ returns a list of subscriptions without secrets
-    ✓ returns an empty array when no subscriptions exist
-  DELETE /api/v1/webhooks/:id
-    ✓ returns 204 when the subscription is deleted
-    ✓ returns 404 when the subscription does not exist
-    ✓ returns 400 for an invalid UUID
-
-Test Suites: 2 passed | Tests: 26 passed (new code)
-Full suite:  50 passed, 0 failed
+Tests: 9 passed, 9 total
+Coverage (src/middleware/rateLimit.ts): 100% statements | 100% functions | 100% lines | 96% branches
 ```
 
-## Pre-existing failures — intentionally scoped
+The single uncovered branch (line 23) is the `req.ip ?? "unknown"` nullish fallback — unreachable under normal Express operation.
 
-The `src/index.ts` file on `main` referenced `metricsHandler` and `metricsMiddleware` without importing them, and `src/metrics/prometheus.ts` was missing the `prom-client` package type declarations. These caused 4 test suites to fail to compile on `main` before this PR existed.
+## Pre-existing test failures — intentionally untouched
 
-This branch removed the dangling `metricsHandler`/`metricsMiddleware` calls from `src/index.ts` because they prevented the webhook route tests from compiling — the test file imports `app` from `index.ts`, so a compile error there blocks the entire suite. The metrics module itself (`prometheus.ts`) was not touched; fixing its missing dependency is out of scope for this PR. All tests that were passing on `main` continue to pass.
+The test suite reports **4 failing test suites** (`src/health.test.ts`, `src/indexerWebhook.test.ts`, and two others) caused by `metricsHandler` and `metricsMiddleware` being referenced in `src/index.ts` without being imported, and a missing `prom-client` type declaration in `src/metrics/prometheus.ts`. **These failures existed before this PR and were not introduced by it.**
+
+No changes were made to those files. Touching them to fix unrelated pre-existing errors would have expanded the scope of this PR, risked introducing regressions in areas outside the rate-limiting feature, and made the diff harder to review. The 20 tests that were passing before this PR continue to pass.
 
 ## Security notes
 
-- Signing secrets are generated with `crypto.randomBytes(32)` (256-bit entropy) and returned only once at subscription creation.
-- Secrets are stored as-is in the DB column; operators should encrypt at rest via their database provider.
-- Signature verification on the receiver side should use `crypto.timingSafeEqual` (same pattern as the existing inbound webhook handler) to prevent timing attacks.
-- Subscriber URLs are validated as proper URLs at registration time; only HTTPS URLs should be accepted in production (can be enforced by adding a `.url().startsWith("https://")` refinement to the Zod schema).
-- The delivery worker runs in-process; for high-volume production use, consider moving to a dedicated queue (BullMQ / SQS) backed by the same `webhook_deliveries` table.
+- IPv6 addresses are normalised to a /56 subnet via `ipKeyGenerator` to prevent trivial bypass by cycling through addresses in the same block.
+- Requests supplying an `X-API-Key` header are bucketed per key, keeping their counter independent from IP-based counters.
+- Rate limiting is skipped in the test environment unless `RATE_LIMIT_ENABLED=true` is set, avoiding flaky tests while keeping the opt-in path for integration tests.
+- If the service runs behind a reverse proxy, set `app.set('trust proxy', 1)` so `req.ip` reflects the real client IP.
 
-Closes issue #37
+Closes issue #12
