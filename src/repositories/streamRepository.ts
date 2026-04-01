@@ -8,6 +8,7 @@ export interface FindAllParams {
   status?: "active" | "paused" | "cancelled" | "completed";
   limit?: number;
   offset?: number;
+  includeDeleted?: boolean;
 }
 
 export interface UpdateStreamParams {
@@ -18,11 +19,14 @@ export interface UpdateStreamParams {
 }
 
 export class StreamRepository {
-  async findById(id: string): Promise<(Stream & { accruedEstimate: string }) | null> {
+  async findById(id: string, includeDeleted = false): Promise<(Stream & { accruedEstimate: string }) | null> {
+    const conditions = [eq(streams.id, id)];
+    if (!includeDeleted) conditions.push(sql`${streams.deletedAt} IS NULL`);
+
     const [result] = await db
       .select()
       .from(streams)
-      .where(eq(streams.id, id))
+      .where(and(...conditions))
       .limit(1);
 
     if (!result) return null;
@@ -43,6 +47,10 @@ export class StreamRepository {
     if (params.payer) conditions.push(eq(streams.payer, params.payer));
     if (params.recipient) conditions.push(eq(streams.recipient, params.recipient));
     if (params.status) conditions.push(eq(streams.status, params.status));
+
+    if (!params.includeDeleted) {
+      conditions.push(sql`${streams.deletedAt} IS NULL`);
+    }
 
     const query = db
       .select()

@@ -46,6 +46,44 @@ describe("Stream API Routes", () => {
       expect(response.status).toBe(400);
       expect(response.body.error).toBe("Invalid stream ID format");
     });
+
+    it("should allow includeDeleted for get by id", async () => {
+      const mockStream = { id: validId, payer: "p1", accruedEstimate: "10.5" };
+      const spy = jest.spyOn(StreamRepository.prototype, "findById").mockResolvedValue(mockStream as never);
+
+      const response = await request(app)
+        .get(`/api/v1/streams/${validId}?includeDeleted=true`)
+        .set("x-api-key", "test-1234");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockStream);
+      expect(spy).toHaveBeenCalledWith(validId, true);
+      spy.mockRestore();
+    });
+
+    it("soft-deletes stream with DELETE", async () => {
+      const spy = jest.spyOn(StreamRepository.prototype, "softDeleteById").mockResolvedValue(true);
+
+      const response = await request(app)
+        .delete(`/api/v1/streams/${validId}`)
+        .set("x-api-key", "test-1234");
+
+      expect(response.status).toBe(204);
+      expect(spy).toHaveBeenCalledWith(validId);
+      spy.mockRestore();
+    });
+
+    it("returns 404 when delete target not found", async () => {
+      const spy = jest.spyOn(StreamRepository.prototype, "softDeleteById").mockResolvedValue(false);
+
+      const response = await request(app)
+        .delete(`/api/v1/streams/${validId}`)
+        .set("x-api-key", "test-1234");
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe("Stream not found");
+      spy.mockRestore();
+    });
   });
 
   describe("GET /api/v1/streams", () => {

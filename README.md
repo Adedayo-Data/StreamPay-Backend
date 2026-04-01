@@ -101,6 +101,16 @@ Security notes:
 - Replay protection is enforced by deduplicating `eventId` values in the ingestion service.
 - Duplicate deliveries are treated as safe no-ops and return `202 Accepted`.
 
+## Soft Delete / Retention policy
+
+A new soft delete flow is available for stream records:
+
+- `DELETE /api/v1/streams/:id`: marks the record as soft-deleted via `deleted_at` timestamp.
+- `GET /api/v1/streams`: by default returns non-deleted records; add `?includeDeleted=true` for admin/inspection mode.
+- `GET /api/v1/streams/:id`: by default hides soft-deleted records; add `?includeDeleted=true` to retrieve them.
+
+All queries now include `deleted_at IS NULL` unless `includeDeleted` is explicitly true.
+
 ## API Versioning Policy
 
 All new features and endpoints must be mounted under the `/api/v1` prefix.
